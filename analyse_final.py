@@ -93,7 +93,7 @@ def claude_analyse(coin, data):
 
     payload = json.dumps({
         "model": "claude-opus-4-5",
-        "max_tokens": 2000,
+        "max_tokens": 3000,
         "system": "Du bist ein erfahrener Krypto-Technischer-Analyst mit Expertise in Elliott-Wellen, RSI, MACD und EMAs. Analysiere praezise und meinungsstark auf Deutsch. Nenne immer konkrete Preisniveaus.",
         "messages": [{"role": "user", "content": (
             f"{ctx}\n\nGib eine vollstaendige technische Analyse:\n\n"
