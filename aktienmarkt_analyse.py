@@ -26,6 +26,44 @@ AKTIEN = [
 
 # =====================================================
 
+def fetch_fundamentals(symbol):
+    url = (f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
+           f"?modules=financialData,defaultKeyStatistics,summaryDetail")
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json"
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read())
+        result = data["quoteSummary"]["result"][0]
+        fd = result.get("financialData", {})
+        ks = result.get("defaultKeyStatistics", {})
+        sd = result.get("summaryDetail", {})
+
+        def val(d, key):
+            v = d.get(key, {})
+            return v.get("raw") if isinstance(v, dict) else v
+
+        return {
+            "marketCap":       val(ks, "marketCap"),
+            "trailingPE":      val(sd, "trailingPE"),
+            "forwardPE":       val(ks, "forwardPE"),
+            "priceToBook":     val(ks, "priceToBook"),
+            "trailingEps":     val(ks, "trailingEps"),
+            "dividendYield":   val(sd, "dividendYield"),
+            "revenueGrowth":   val(fd, "revenueGrowth"),
+            "earningsGrowth":  val(fd, "earningsGrowth"),
+            "profitMargins":   val(fd, "profitMargins"),
+            "returnOnEquity":  val(fd, "returnOnEquity"),
+            "debtToEquity":    val(fd, "debtToEquity"),
+            "week52High":      val(sd, "fiftyTwoWeekHigh"),
+            "week52Low":       val(sd, "fiftyTwoWeekLow"),
+            "currentRatio":    val(fd, "currentRatio"),
+        }
+    except Exception:
+        return {}
+
 def fetch_yahoo(symbol, days=400):
     end   = int(datetime.datetime.utcnow().timestamp())
     start = int((datetime.datetime.utcnow() - datetime.timedelta(days=days)).timestamp())
@@ -96,26 +134,53 @@ def build(raw):
              "rsi": r14[i], "macd": ml[i], "signal": sig[i], "hist": hist[i]}
             for i in range(len(raw))]
 
-def claude_analyse(name, einheit, data):
+def claude_analyse(name, einheit, data, fund):
     last = data[-1]
     def px(v): return f"{v:,.2f} {einheit}" if v else "-"
     ctx  = f"Wertpapier: {name} ({einheit}) - Daily - {last['date']}\n\nAKTUELL:\n"
     ctx += f"  Kurs:    {px(last['price'])}\n  EMA 50:  {px(last['ema50'])}\n"
     ctx += f"  EMA 200: {px(last['ema200'])}\n  RSI(14): {last['rsi']}\n"
-    ctx += f"  MACD:    {last['macd']}  Signal: {last['signal']}  Hist: {last['hist']}\n\nLETZTE 30 TAGE:\n"
+    ctx += f"  MACD:    {last['macd']}  Signal: {last['signal']}  Hist: {last['hist']}\n"
+
+    if fund:
+        def fp(v, fmt=".2f", suffix=""): return f"{v:{fmt}}{suffix}" if v is not None else "-"
+        def pct(v): return f"{v*100:.1f}%" if v is not None else "-"
+        def mcap(v):
+            if v is None: return "-"
+            if v >= 1e12: return f"${v/1e12:.2f}T"
+            if v >= 1e9:  return f"${v/1e9:.2f}B"
+            return f"${v/1e6:.2f}M"
+        ctx += "\nFUNDAMENTALDATEN:\n"
+        ctx += f"  Marktkapitalisierung: {mcap(fund.get('marketCap'))}\n"
+        ctx += f"  KGV (Trailing):       {fp(fund.get('trailingPE'))}\n"
+        ctx += f"  KGV (Forward):        {fp(fund.get('forwardPE'))}\n"
+        ctx += f"  Kurs/Buchwert:        {fp(fund.get('priceToBook'))}\n"
+        ctx += f"  EPS (Trailing):       {fp(fund.get('trailingEps'))}\n"
+        ctx += f"  Dividendenrendite:    {pct(fund.get('dividendYield'))}\n"
+        ctx += f"  Umsatzwachstum (YoY): {pct(fund.get('revenueGrowth'))}\n"
+        ctx += f"  Gewinnwachstum (YoY): {pct(fund.get('earningsGrowth'))}\n"
+        ctx += f"  Gewinnmarge:          {pct(fund.get('profitMargins'))}\n"
+        ctx += f"  Eigenkapitalrendite:  {pct(fund.get('returnOnEquity'))}\n"
+        ctx += f"  Verschuldungsgrad:    {fp(fund.get('debtToEquity'))}\n"
+        ctx += f"  52W-Hoch:             {fp(fund.get('week52High'))}\n"
+        ctx += f"  52W-Tief:             {fp(fund.get('week52Low'))}\n"
+
+    ctx += "\nLETZTE 30 TAGE:\n"
     for d in data[-30:]:
         ctx += f"  {d['date']}: {px(d['price'])} | RSI:{d['rsi']} | MACD:{d['macd']} | Hist:{d['hist']}\n"
 
+    has_fund = bool(fund)
     payload = json.dumps({
         "model": "claude-opus-4-5",
-        "max_tokens": 3000,
+        "max_tokens": 3500,
         "system": (
             f"Du bist ein erfahrener Aktienmarkt-Analyst mit Expertise in Elliott-Wellen, "
-            f"RSI, MACD und EMAs. Analysiere {name} praezise und meinungsstark auf Deutsch. "
-            f"Nenne immer konkrete Preisniveaus."
+            f"RSI, MACD, EMAs und Fundamentalanalyse. Analysiere {name} praezise und "
+            f"meinungsstark auf Deutsch. Nenne immer konkrete Preisniveaus."
         ),
         "messages": [{"role": "user", "content": (
-            f"{ctx}\n\nGib eine vollstaendige technische Analyse:\n\n"
+            f"{ctx}\n\nGib eine vollstaendige technische"
+            f"{' und fundamentale' if has_fund else ''} Analyse:\n\n"
             "## 1. Elliott-Wellen-Analyse\n"
             "Aktive Welle? Impuls oder Korrektur? Position im Zyklus?\n\n"
             "## 2. EMA-Trendstruktur\n"
@@ -124,9 +189,16 @@ def claude_analyse(name, einheit, data):
             "Momentum, Zonen, Divergenzen?\n\n"
             "## 4. MACD-Analyse\n"
             "Crossover, Histogramm-Richtung, Momentum?\n\n"
-            "## 5. Gesamtbild & Schluesselniveaus\n"
+            + (
+            "## 5. Fundamentalanalyse\n"
+            "Bewertung (KGV, KBV), Wachstum, Margen, Verschuldung. "
+            "Ist die Aktie fair bewertet, unter- oder ueberbewertet? "
+            "Wie unterstuetzen/widersprechen die Fundamentaldaten dem technischen Bild?\n\n"
+            if has_fund else ""
+            ) +
+            "## 6. Gesamtbild & Schluesselniveaus\n"
             "Bias + konkrete Support/Resistance-Preiszonen.\n\n"
-            "## 6. 2-Tages-Prognose (48h)\n"
+            "## 7. 2-Tages-Prognose (48h)\n"
             "Was wird in den naechsten 48 Stunden WAHRSCHEINLICH passieren?\n"
             "- HAUPTSZENARIO (XX% Wahrscheinlichkeit): Beschreibe den wahrscheinlichsten "
             "Kursverlauf mit konkretem Kursziel und Prozentveraenderung.\n"
@@ -145,7 +217,67 @@ def claude_analyse(name, einheit, data):
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read())["content"][0]["text"]
 
-def to_html(name, einheit, farbe, data, text):
+def fund_table_html(fund):
+    if not fund:
+        return ""
+
+    def fp(v, fmt=".2f", suffix=""): return f"{v:{fmt}}{suffix}" if v is not None else "-"
+    def pct(v): return f"{v*100:.1f}%" if v is not None else "-"
+    def mcap(v):
+        if v is None: return "-"
+        if v >= 1e12: return f"${v/1e12:.2f}T"
+        if v >= 1e9:  return f"${v/1e9:.2f}B"
+        return f"${v/1e6:.2f}M"
+
+    def frow(bg, label, value, hint="", hint_color="#555"):
+        return (f'<tr style="border-bottom:1px solid #eee;background:{bg}">'
+                f'<td style="padding:9px 16px;color:#555;font-size:13px">{label}</td>'
+                f'<td style="padding:9px 16px;font-weight:bold;color:#2c3e50">{value}</td>'
+                f'<td style="padding:9px 16px;font-size:12px;color:{hint_color}">{hint}</td></tr>')
+
+    kgv = fund.get("trailingPE")
+    kgv_hint = ""
+    kgv_color = "#555"
+    if kgv:
+        if kgv < 15:   kgv_hint, kgv_color = "guenstig", "#27ae60"
+        elif kgv < 25: kgv_hint, kgv_color = "moderat", "#f39c12"
+        else:          kgv_hint, kgv_color = "teuer", "#e74c3c"
+
+    roe = fund.get("returnOnEquity")
+    roe_hint = ""
+    roe_color = "#555"
+    if roe:
+        if roe > 0.20:  roe_hint, roe_color = "stark", "#27ae60"
+        elif roe > 0.10: roe_hint, roe_color = "solide", "#f39c12"
+        else:            roe_hint, roe_color = "schwach", "#e74c3c"
+
+    rows = [
+        frow("white",   "Marktkapitalisierung", mcap(fund.get("marketCap"))),
+        frow("#fafafa", "KGV Trailing",          fp(kgv),                    kgv_hint, kgv_color),
+        frow("white",   "KGV Forward",           fp(fund.get("forwardPE"))),
+        frow("#fafafa", "Kurs / Buchwert",        fp(fund.get("priceToBook"))),
+        frow("white",   "EPS (Trailing)",         f"${fp(fund.get('trailingEps'))}"),
+        frow("#fafafa", "Dividendenrendite",      pct(fund.get("dividendYield"))),
+        frow("white",   "Umsatzwachstum (YoY)",  pct(fund.get("revenueGrowth"))),
+        frow("#fafafa", "Gewinnwachstum (YoY)",   pct(fund.get("earningsGrowth"))),
+        frow("white",   "Gewinnmarge",            pct(fund.get("profitMargins"))),
+        frow("#fafafa", "Eigenkapitalrendite",    pct(roe), roe_hint, roe_color),
+        frow("white",   "Verschuldungsgrad",      fp(fund.get("debtToEquity"))),
+        frow("#fafafa", "52W-Hoch / Tief",
+             f"{fp(fund.get('week52High'))} / {fp(fund.get('week52Low'))}"),
+    ]
+    return f"""
+  <h3 style="color:#2c3e50;border-bottom:3px solid #8e44ad;padding:8px 0 6px 0;margin-top:28px">Fundamentaldaten</h3>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:16px;background:white;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
+    <tr style="background:#8e44ad;color:white">
+      <td style="padding:9px 16px;font-size:11px;font-weight:bold">KENNZAHL</td>
+      <td style="padding:9px 16px;font-size:11px;font-weight:bold">WERT</td>
+      <td style="padding:9px 16px;font-size:11px;font-weight:bold">EINSCHAETZUNG</td>
+    </tr>
+    {"".join(rows)}
+  </table>"""
+
+def to_html(name, einheit, farbe, data, text, fund=None):
     last = data[-1]
     def px(v): return f"{v:,.2f}" if v else "-"
     def rc(v):
@@ -204,6 +336,7 @@ def to_html(name, einheit, farbe, data, text):
 
   <div style="background:white;border-radius:8px;padding:22px;box-shadow:0 2px 8px rgba(0,0,0,0.08)">
     <div style="font-size:11px;color:#888;letter-spacing:1px;margin-bottom:14px">ANALYSE · CLAUDE AI</div>
+    {fund_table_html(fund)}
     {html_text}
   </div>
   <div style="text-align:center;margin-top:14px;font-size:11px;color:#aaa">
@@ -240,14 +373,21 @@ def main():
         except Exception as e:
             print(f"   Datenfehler: {e}"); continue
 
+        print(f"  {name}: Lade Fundamentaldaten ...")
+        fund = fetch_fundamentals(symbol)
+        if fund:
+            print(f"   KGV:{fund.get('trailingPE')} | Marktcap:{fund.get('marketCap')}")
+        else:
+            print(f"   Keine Fundamentaldaten verfuegbar")
+
         print(f"  {name}: Claude analysiert ...")
         try:
-            text = claude_analyse(name, einheit, data)
+            text = claude_analyse(name, einheit, data, fund)
             print(f"   Analyse erhalten ({len(text)} Zeichen)")
         except Exception as e:
             print(f"   API-Fehler: {e}"); continue
 
-        alle_html += to_html(name, einheit, farbe, data, text)
+        alle_html += to_html(name, einheit, farbe, data, text, fund)
         alle_html += '<hr style="margin:10px 0 30px 0;border:none;border-top:3px solid #eee">'
         time.sleep(2)
 
