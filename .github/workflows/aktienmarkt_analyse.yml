@@ -1,0 +1,27 @@
+name: Aktienmarkt Tagesanalyse
+
+on:
+  schedule:
+    - cron: '30 6 * * 1-5'   # 06:30 UTC = 08:30 Uhr Deutschland (nur Wochentage)
+  workflow_dispatch:           # manueller Start jederzeit moeglich
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository laden
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Analyse starten
+        env:
+          ANTHROPIC_API_KEY:  ${{ secrets.ANTHROPIC_API_KEY }}
+          GMAIL_ABSENDER:     ${{ secrets.GMAIL_ABSENDER }}
+          GMAIL_APP_PASSWORT: ${{ secrets.GMAIL_APP_PASSWORT }}
+          EMPFAENGER:         ${{ secrets.EMPFAENGER }}
+        run: python aktienmarkt_analyse.py
