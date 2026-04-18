@@ -79,7 +79,10 @@ YAHOO_HEADERS = {
 
 def fetch_fundamentals(symbol):
     try:
-        info = yf.Ticker(symbol).info
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        if not info or len(info) < 5:
+            return {}, f"Keine Daten von yfinance ({symbol})"
         def g(k): return info.get(k)
         return {
             "marketCap":      g("marketCap"),
@@ -95,9 +98,9 @@ def fetch_fundamentals(symbol):
             "debtToEquity":   g("debtToEquity"),
             "week52High":     g("fiftyTwoWeekHigh"),
             "week52Low":      g("fiftyTwoWeekLow"),
-        }
-    except Exception:
-        return {}
+        }, None
+    except Exception as e:
+        return {}, str(e)
 
 def ema(prices, period):
     k = 2/(period+1); out=[]; prev=None
@@ -296,14 +299,14 @@ if start_btn:
         # Fundamentaldaten
         fortschritt.progress(anteil * 0.5 + idx/len(ausgewaehlt)*0.5,
                              text=f"{name}: Lade Fundamentaldaten...")
-        fund = fetch_fundamentals(symbol)
+        fund, fund_err = fetch_fundamentals(symbol)
 
         with col2:
-            if fund:
+            if fund and any(v is not None for v in fund.values()):
                 st.markdown("**Fundamentaldaten**")
                 st.dataframe(fmt_fund_df(fund), hide_index=True, use_container_width=True)
             else:
-                st.info("Keine Fundamentaldaten verfügbar.")
+                st.warning(f"Fundamentaldaten nicht verfügbar: {fund_err or 'Unbekannter Fehler'}")
 
         # Claude Analyse
         fortschritt.progress(anteil * 0.8 + idx/len(ausgewaehlt)*0.2,
