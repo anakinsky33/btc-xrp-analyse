@@ -53,7 +53,7 @@ def fetch_yahoo(symbol, days=400):
     start = int((datetime.datetime.utcnow() - datetime.timedelta(days=days)).timestamp())
     url   = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
              f"?interval=1d&period1={start}&period2={end}")
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+    req = urllib.request.Request(url, headers=YAHOO_HEADERS)
     with urllib.request.urlopen(req, timeout=20) as r:
         data = json.loads(r.read())
     result     = data["chart"]["result"][0]
@@ -62,10 +62,20 @@ def fetch_yahoo(symbol, days=400):
     return [{"date": datetime.date.fromtimestamp(ts).isoformat(), "close": round(float(c), 4)}
             for ts, c in zip(timestamps, closes) if c is not None and c > 0]
 
+YAHOO_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/124.0.0.0 Safari/537.36"),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8",
+    "Referer": "https://finance.yahoo.com/",
+    "Origin": "https://finance.yahoo.com",
+}
+
 def fetch_fundamentals(symbol):
-    url = (f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{symbol}"
-           f"?modules=financialData,defaultKeyStatistics,summaryDetail")
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
+    url = (f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}"
+           f"?modules=financialData%2CdefaultKeyStatistics%2CsummaryDetail")
+    req = urllib.request.Request(url, headers=YAHOO_HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             data = json.loads(r.read())
@@ -224,8 +234,12 @@ if not ausgewaehlt:
     st.warning("Bitte mindestens eine Aktie in der Sidebar auswählen.")
     st.stop()
 
+api_key = api_key.strip()
 if not api_key:
     st.warning("Bitte Anthropic API Key in der Sidebar eintragen.")
+    st.stop()
+if not api_key.startswith("sk-"):
+    st.error("API Key ungültig — muss mit 'sk-' beginnen.")
     st.stop()
 
 start_btn = st.button("🚀 Analyse starten", type="primary", use_container_width=True)
