@@ -2,6 +2,7 @@
 import streamlit as st
 import os, json, datetime, urllib.request, time
 import pandas as pd
+import yfinance as yf
 
 st.set_page_config(page_title="Aktienmarkt Analyse", page_icon="📈", layout="wide")
 
@@ -30,6 +31,10 @@ with st.sidebar:
         value=get_secret("ANTHROPIC_API_KEY"),
         type="password"
     )
+
+    if api_key:
+        masked = api_key[:8] + "..." + api_key[-4:]
+        st.caption(f"Key erkannt: `{masked}` ({len(api_key)} Zeichen)")
 
     st.divider()
     st.subheader("📧 E-Mail (optional)")
@@ -73,25 +78,23 @@ YAHOO_HEADERS = {
 }
 
 def fetch_fundamentals(symbol):
-    url = (f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}"
-           f"?modules=financialData%2CdefaultKeyStatistics%2CsummaryDetail")
-    req = urllib.request.Request(url, headers=YAHOO_HEADERS)
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            data = json.loads(r.read())
-        res = data["quoteSummary"]["result"][0]
-        fd, ks, sd = res.get("financialData",{}), res.get("defaultKeyStatistics",{}), res.get("summaryDetail",{})
-        def v(d, k):
-            x = d.get(k, {})
-            return x.get("raw") if isinstance(x, dict) else x
+        info = yf.Ticker(symbol).info
+        def g(k): return info.get(k)
         return {
-            "marketCap": v(ks,"marketCap"), "trailingPE": v(sd,"trailingPE"),
-            "forwardPE": v(ks,"forwardPE"), "priceToBook": v(ks,"priceToBook"),
-            "trailingEps": v(ks,"trailingEps"), "dividendYield": v(sd,"dividendYield"),
-            "revenueGrowth": v(fd,"revenueGrowth"), "earningsGrowth": v(fd,"earningsGrowth"),
-            "profitMargins": v(fd,"profitMargins"), "returnOnEquity": v(fd,"returnOnEquity"),
-            "debtToEquity": v(fd,"debtToEquity"),
-            "week52High": v(sd,"fiftyTwoWeekHigh"), "week52Low": v(sd,"fiftyTwoWeekLow"),
+            "marketCap":      g("marketCap"),
+            "trailingPE":     g("trailingPE"),
+            "forwardPE":      g("forwardPE"),
+            "priceToBook":    g("priceToBook"),
+            "trailingEps":    g("trailingEps"),
+            "dividendYield":  g("dividendYield"),
+            "revenueGrowth":  g("revenueGrowth"),
+            "earningsGrowth": g("earningsGrowth"),
+            "profitMargins":  g("profitMargins"),
+            "returnOnEquity": g("returnOnEquity"),
+            "debtToEquity":   g("debtToEquity"),
+            "week52High":     g("fiftyTwoWeekHigh"),
+            "week52Low":      g("fiftyTwoWeekLow"),
         }
     except Exception:
         return {}
