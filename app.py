@@ -5,6 +5,12 @@ import pandas as pd
 
 st.set_page_config(page_title="Aktienmarkt Analyse", page_icon="📈", layout="wide")
 
+def get_secret(key):
+    try:
+        return st.secrets[key]
+    except Exception:
+        return os.environ.get(key, "")
+
 # ── Konfiguration ──────────────────────────────────────────────────────────────
 
 ALLE_AKTIEN = [
@@ -21,7 +27,7 @@ with st.sidebar:
 
     api_key = st.text_input(
         "Anthropic API Key",
-        value=os.environ.get("ANTHROPIC_API_KEY", ""),
+        value=get_secret("ANTHROPIC_API_KEY"),
         type="password"
     )
 
@@ -29,9 +35,9 @@ with st.sidebar:
     st.subheader("📧 E-Mail (optional)")
     send_mail = st.toggle("E-Mail senden", value=False)
     if send_mail:
-        gmail_absender     = st.text_input("Absender (Gmail)", value=os.environ.get("GMAIL_ABSENDER", ""))
-        gmail_passwort     = st.text_input("App-Passwort",     value=os.environ.get("GMAIL_APP_PASSWORT", ""), type="password")
-        empfaenger         = st.text_input("Empfänger",        value=os.environ.get("EMPFAENGER", ""))
+        gmail_absender = st.text_input("Absender (Gmail)", value=get_secret("GMAIL_ABSENDER"))
+        gmail_passwort = st.text_input("App-Passwort",     value=get_secret("GMAIL_APP_PASSWORT"), type="password")
+        empfaenger     = st.text_input("Empfänger",        value=get_secret("EMPFAENGER"))
 
     st.divider()
     st.subheader("📊 Aktien auswählen")
