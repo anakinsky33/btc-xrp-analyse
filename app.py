@@ -11,8 +11,6 @@ def get_secret(key):
     except Exception:
         return os.environ.get(key, "")
 
-# ── Konfiguration ──────────────────────────────────────────────────────────────
-
 ALLE_AKTIEN = [
     {"name": "S&P 500",   "symbol": "^GSPC", "color": "#1a73e8", "einheit": "Punkte"},
     {"name": "NVIDIA",    "symbol": "NVDA",  "color": "#76b900", "einheit": "USD"},
@@ -21,47 +19,19 @@ ALLE_AKTIEN = [
 ]
 
 HEADERS = {
-    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                   "AppleWebKit/537.36 (KHTML, like Gecko) "
-                   "Chrome/124.0.0.0 Safari/537.36"),
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json",
     "Referer": "https://finance.yahoo.com/",
 }
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
-
 with st.sidebar:
     st.title("⚙️ Einstellungen")
-
-    api_key = st.text_input(
-        "Anthropic API Key",
-        value=get_secret("ANTHROPIC_API_KEY"),
-        type="password"
-    )
-    if api_key:
-        masked = api_key[:8] + "..." + api_key[-4:]
-        st.caption(f"Key: `{masked}` ({len(api_key)} Zeichen)")
-        if st.button("🔑 Key testen", use_container_width=True):
-            test_payload = json.dumps({
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 10,
-                "messages": [{"role": "user", "content": "Hi"}]
-            }).encode()
-            test_req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages", data=test_payload,
-                headers={"Content-Type": "application/json",
-                         "x-api-key": api_key.strip(),
-                         "anthropic-version": "2023-06-01"}, method="POST")
-            try:
-                with urllib.request.urlopen(test_req, timeout=15) as r:
-                    st.success("✅ API Key gültig!")
-            except urllib.error.HTTPError as e:
-                body = e.read().decode("utf-8", errors="replace")
-                st.error(f"❌ {e.code}: {body}")
-            except Exception as e:
-                st.error(f"❌ {e}")
-
+    st.subheader("📊 Aktien auswählen")
+    ausgewaehlt = []
+    for a in ALLE_AKTIEN:
+        if st.checkbox(a["name"], value=True):
+            ausgewaehlt.append(a)
     st.divider()
     st.subheader("📧 E-Mail (optional)")
     send_mail = st.toggle("E-Mail senden", value=False)
@@ -70,20 +40,11 @@ with st.sidebar:
         gmail_passwort = st.text_input("App-Passwort", value=get_secret("GMAIL_APP_PASSWORT"), type="password")
         empfaenger     = st.text_input("Empfänger",    value=get_secret("EMPFAENGER"))
 
-    st.divider()
-    st.subheader("📊 Aktien auswählen")
-    ausgewaehlt = []
-    for a in ALLE_AKTIEN:
-        if st.checkbox(a["name"], value=True):
-            ausgewaehlt.append(a)
-
 # ── Datenabruf ─────────────────────────────────────────────────────────────────
-
 def fetch_yahoo(symbol, days=400):
     end   = int(datetime.datetime.utcnow().timestamp())
     start = int((datetime.datetime.utcnow() - datetime.timedelta(days=days)).timestamp())
-    url   = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-             f"?interval=1d&period1={start}&period2={end}")
+    url   = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&period1={start}&period2={end}"
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=20) as r:
         data = json.loads(r.read())
@@ -100,40 +61,26 @@ def fetch_fundamentals(symbol):
         with urllib.request.urlopen(req, timeout=20) as r:
             data = json.loads(r.read())
         res = data["quoteSummary"]["result"][0]
-        fd = res.get("financialData", {})
-        ks = res.get("defaultKeyStatistics", {})
-        sd = res.get("summaryDetail", {})
+        fd, ks, sd = res.get("financialData",{}), res.get("defaultKeyStatistics",{}), res.get("summaryDetail",{})
         def v(d, k):
             x = d.get(k, {})
             return x.get("raw") if isinstance(x, dict) else x
         fund = {
-            "marketCap":      v(ks, "marketCap"),
-            "trailingPE":     v(sd, "trailingPE"),
-            "forwardPE":      v(ks, "forwardPE"),
-            "priceToBook":    v(ks, "priceToBook"),
-            "trailingEps":    v(ks, "trailingEps"),
-            "dividendYield":  v(sd, "dividendYield"),
-            "revenueGrowth":  v(fd, "revenueGrowth"),
-            "earningsGrowth": v(fd, "earningsGrowth"),
-            "profitMargins":  v(fd, "profitMargins"),
-            "returnOnEquity": v(fd, "returnOnEquity"),
-            "debtToEquity":   v(fd, "debtToEquity"),
-            "week52High":     v(sd, "fiftyTwoWeekHigh"),
-            "week52Low":      v(sd, "fiftyTwoWeekLow"),
+            "marketCap": v(ks,"marketCap"), "trailingPE": v(sd,"trailingPE"),
+            "forwardPE": v(ks,"forwardPE"), "priceToBook": v(ks,"priceToBook"),
+            "trailingEps": v(ks,"trailingEps"), "dividendYield": v(sd,"dividendYield"),
+            "revenueGrowth": v(fd,"revenueGrowth"), "earningsGrowth": v(fd,"earningsGrowth"),
+            "profitMargins": v(fd,"profitMargins"), "returnOnEquity": v(fd,"returnOnEquity"),
+            "debtToEquity": v(fd,"debtToEquity"),
+            "week52High": v(sd,"fiftyTwoWeekHigh"), "week52Low": v(sd,"fiftyTwoWeekLow"),
         }
-        if any(val is not None for val in fund.values()):
-            return fund, None
-        return {}, "Alle Werte leer (Yahoo liefert leere Felder)"
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:300]
-        return {}, f"HTTP {e.code}: {body}"
-    except Exception as e:
-        return {}, f"{type(e).__name__}: {e}"
+        return fund if any(val is not None for val in fund.values()) else {}
+    except Exception:
+        return {}
 
 # ── Indikatoren ────────────────────────────────────────────────────────────────
-
 def ema(prices, period):
-    k = 2/(period+1); out = []; prev = None
+    k = 2/(period+1); out=[]; prev=None
     for i, p in enumerate(prices):
         if i < period-1: out.append(None); continue
         if prev is None: prev = sum(prices[:period])/period
@@ -142,7 +89,7 @@ def ema(prices, period):
     return out
 
 def rsi(prices, period=14):
-    out = [None]*period; ag = al = 0.0
+    out=[None]*period; ag=al=0.0
     for i in range(1, period+1):
         d = prices[i]-prices[i-1]
         if d > 0: ag += d
@@ -157,151 +104,112 @@ def rsi(prices, period=14):
     return out
 
 def macd(prices):
-    e12 = ema(prices, 12); e26 = ema(prices, 26)
-    ml  = [round(e12[i]-e26[i], 4) if e12[i] and e26[i] else None for i in range(len(prices))]
-    st_ = next(i for i, x in enumerate(ml) if x is not None)
-    sr  = ema([x for x in ml if x is not None], 9)
-    sig = [None if ml[i] is None else sr[i-st_] for i in range(len(prices))]
-    hist= [round(ml[i]-sig[i], 4) if ml[i] is not None and sig[i] is not None else None
-           for i in range(len(prices))]
+    e12=ema(prices,12); e26=ema(prices,26)
+    ml=[round(e12[i]-e26[i],4) if e12[i] and e26[i] else None for i in range(len(prices))]
+    st_=next(i for i,x in enumerate(ml) if x is not None)
+    sr=ema([x for x in ml if x is not None],9)
+    sig=[None if ml[i] is None else sr[i-st_] for i in range(len(prices))]
+    hist=[round(ml[i]-sig[i],4) if ml[i] is not None and sig[i] is not None else None for i in range(len(prices))]
     return ml, sig, hist
 
 def build(raw):
-    prices = [r["close"] for r in raw]
-    e50, e200 = ema(prices, 50), ema(prices, 200)
-    r14 = rsi(prices)
-    ml, sig, hist = macd(prices)
-    return [{"date": raw[i]["date"], "price": raw[i]["close"],
-             "ema50": e50[i], "ema200": e200[i],
-             "rsi": r14[i], "macd": ml[i], "signal": sig[i], "hist": hist[i]}
+    prices=[r["close"] for r in raw]
+    e50,e200=ema(prices,50),ema(prices,200)
+    r14=rsi(prices); ml,sig,hist=macd(prices)
+    return [{"date":raw[i]["date"],"price":raw[i]["close"],
+             "ema50":e50[i],"ema200":e200[i],
+             "rsi":r14[i],"macd":ml[i],"signal":sig[i],"hist":hist[i]}
             for i in range(len(raw))]
 
-# ── Claude Analyse ─────────────────────────────────────────────────────────────
-
-def claude_analyse(name, einheit, data, fund, key):
+# ── Regelbasierte Prognose ─────────────────────────────────────────────────────
+def generate_prognose(data):
     last = data[-1]
-    def px(v): return f"{v:,.2f} {einheit}" if v else "-"
-    ctx  = f"Wertpapier: {name} ({einheit}) - Daily - {last['date']}\n\nAKTUELL:\n"
-    ctx += f"  Kurs: {px(last['price'])}  EMA50: {px(last['ema50'])}  EMA200: {px(last['ema200'])}\n"
-    ctx += f"  RSI: {last['rsi']}  MACD: {last['macd']}  Hist: {last['hist']}\n"
-    if fund:
-        def fp(v): return f"{v:.2f}" if v is not None else "-"
-        def pct(v): return f"{v*100:.1f}%" if v is not None else "-"
-        def mc(v): return (f"${v/1e12:.2f}T" if v >= 1e12 else f"${v/1e9:.2f}B") if v else "-"
-        ctx += (f"\nFUNDAMENTALDATEN: MarktCap={mc(fund.get('marketCap'))} "
-                f"KGV={fp(fund.get('trailingPE'))} KGV-fwd={fp(fund.get('forwardPE'))} "
-                f"KBV={fp(fund.get('priceToBook'))} EPS={fp(fund.get('trailingEps'))} "
-                f"Div={pct(fund.get('dividendYield'))} UmsWachstum={pct(fund.get('revenueGrowth'))} "
-                f"GewWachstum={pct(fund.get('earningsGrowth'))} Marge={pct(fund.get('profitMargins'))} "
-                f"ROE={pct(fund.get('returnOnEquity'))} D/E={fp(fund.get('debtToEquity'))}\n")
-    ctx += "\nLETZTE 30 TAGE:\n"
-    for d in data[-30:]:
-        ctx += f"  {d['date']}: {px(d['price'])} RSI:{d['rsi']} MACD:{d['macd']}\n"
+    signals_bull, signals_bear = [], []
 
-    has_fund = bool(fund)
-    payload = json.dumps({
-        "model": "claude-opus-4-5",
-        "max_tokens": 3500,
-        "system": (f"Du bist ein erfahrener Aktienmarkt-Analyst. Analysiere {name} "
-                   f"praezise auf Deutsch mit konkreten Preisniveaus."),
-        "messages": [{"role": "user", "content": (
-            f"{ctx}\n\nVollstaendige technische{' und fundamentale' if has_fund else ''} Analyse:\n\n"
-            "## 1. Elliott-Wellen-Analyse\n"
-            "## 2. EMA-Trendstruktur\n"
-            "## 3. RSI-Analyse\n"
-            "## 4. MACD-Analyse\n"
-            + ("## 5. Fundamentalanalyse\nBewertung, Wachstum, Margen. Fair bewertet?\n" if has_fund else "")
-            + "## 6. Gesamtbild & Schluesselniveaus\n"
-            "## 7. 2-Tages-Prognose (48h)\n"
-            "- HAUPTSZENARIO (XX%): Kursziel + Prozentveraenderung\n"
-            "- ALTERNATIVSZENARIO (XX%): Gegenszenario\n"
-            "- ENTSCHEIDENDE MARKEN:\n"
-            "- INVALIDIERUNGSLEVEL:\n"
-            "- HANDLUNGSEMPFEHLUNG:\n"
-        )}]
-    }).encode()
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages", data=payload,
-        headers={"Content-Type": "application/json", "x-api-key": key,
-                 "anthropic-version": "2023-06-01"}, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=90) as r:
-            return json.loads(r.read())["content"][0]["text"]
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        raise Exception(f"HTTP {e.code}: {body}")
+    # EMA-Trend
+    p, e50, e200 = last["price"], last["ema50"] or 0, last["ema200"] or 0
+    if p > e50 > e200:
+        signals_bull.append("Golden Cross / Preis über EMA50 & EMA200")
+    elif p < e50 < e200:
+        signals_bear.append("Death Cross / Preis unter EMA50 & EMA200")
+    elif p > e50:
+        signals_bull.append("Preis über EMA50")
+    else:
+        signals_bear.append("Preis unter EMA50")
 
-# ── E-Mail HTML ────────────────────────────────────────────────────────────────
+    # RSI
+    r = last["rsi"] or 50
+    if r > 70:
+        signals_bear.append(f"RSI überkauft ({r})")
+    elif r < 30:
+        signals_bull.append(f"RSI überverkauft – Erholung wahrscheinlich ({r})")
+    elif r > 55:
+        signals_bull.append(f"RSI bullish ({r})")
+    elif r < 45:
+        signals_bear.append(f"RSI bearish ({r})")
 
-def build_email_html(name, einheit, farbe, data, text, fund):
-    last = data[-1]
-    def px(v): return f"{v:,.2f}" if v else "-"
-    def rc(v):
-        if not v: return "#888"
-        return "#e74c3c" if v > 70 else ("#27ae60" if v < 30 else "#f39c12")
-    def tc(v): return "#27ae60" if (v or 0) > 0 else "#e74c3c"
-    ema50_ok  = (last["price"] or 0) > (last["ema50"]  or 0)
-    ema200_ok = (last["price"] or 0) > (last["ema200"] or 0)
+    # MACD
+    if last["macd"] is not None and last["signal"] is not None:
+        if last["macd"] > last["signal"]:
+            signals_bull.append("MACD über Signal-Linie")
+        else:
+            signals_bear.append("MACD unter Signal-Linie")
 
-    html_text = ""
-    for line in text.split("\n"):
-        if line.startswith("## "):
-            s = line[3:]
-            is_p = "2-Tages" in s or "Prognose" in s
-            html_text += (f'<h3 style="color:{"#ff6b6b" if is_p else "#2c3e50"};'
-                          f'border-bottom:3px solid {"#e74c3c" if is_p else farbe};'
-                          f'padding:8px 0 6px 0;margin-top:28px">{s}</h3>')
-        elif any(line.startswith(f"- {k}") for k in ["HAUPTSZENARIO", "ALTERNATIVSZENARIO"]):
-            html_text += f'<p style="font-weight:bold;color:#e74c3c">{html_lib.escape(line)}</p>'
-        elif any(line.startswith(f"- {k}") for k in ["ENTSCHEIDENDE", "INVALIDIERUNG", "HANDLUNG"]):
-            html_text += f'<p style="font-weight:bold;color:#f39c12">{html_lib.escape(line)}</p>'
-        elif line.strip():
-            html_text += f'<p style="margin:4px 0;line-height:1.7">{html_lib.escape(line)}</p>'
+    # Histogramm-Richtung
+    if len(data) >= 3:
+        h1, h2 = last["hist"], data[-2]["hist"]
+        if h1 is not None and h2 is not None:
+            if h1 > h2:
+                signals_bull.append("Histogramm steigt (zunehmendes Momentum)")
+            else:
+                signals_bear.append("Histogramm fällt (abnehmendes Momentum)")
 
-    def row(bg, label, value, color, status, sc):
-        return (f'<tr style="border-bottom:1px solid #eee;background:{bg}">'
-                f'<td style="padding:10px 16px;color:#555;font-size:13px">{label}</td>'
-                f'<td style="padding:10px 16px;font-weight:bold;color:{color}">{value}</td>'
-                f'<td style="padding:10px 16px;font-size:12px;font-weight:bold;color:{sc}">{status}</td></tr>')
+    # Kurzfristiger Preisimpuls (letzte 3 Tage)
+    if len(data) >= 4:
+        trend3 = data[-1]["price"] - data[-4]["price"]
+        if trend3 > 0:
+            signals_bull.append(f"3-Tage-Impuls positiv (+{trend3:.2f})")
+        else:
+            signals_bear.append(f"3-Tage-Impuls negativ ({trend3:.2f})")
 
-    return f"""
-<div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto 40px auto;background:#f8f9fa;padding:20px;border-radius:8px">
-  <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;padding:20px;border-radius:8px;margin-bottom:20px;border-left:5px solid {farbe}">
-    <div style="font-size:11px;letter-spacing:2px;opacity:0.6">AKTIENMARKT ANALYSE - {last['date']}</div>
-    <div style="font-size:24px;font-weight:bold;margin-top:4px;color:{farbe}">{name}</div>
-  </div>
-  <table style="width:100%;border-collapse:collapse;margin-bottom:20px;background:white;border-radius:8px;overflow:hidden">
-    <tr style="background:#2c3e50;color:white">
-      <td style="padding:10px 16px;font-size:11px;font-weight:bold">INDIKATOR</td>
-      <td style="padding:10px 16px;font-size:11px;font-weight:bold">WERT</td>
-      <td style="padding:10px 16px;font-size:11px;font-weight:bold">STATUS</td>
-    </tr>
-    {row("white",   f"Kurs ({einheit})", f'<span style="font-size:17px">{px(last["price"])}</span>', farbe, "", "")}
-    {row("#fafafa", "EMA 50",   px(last["ema50"]),  "#2980b9", "UEBER EMA50"  if ema50_ok  else "UNTER EMA50",  "#27ae60" if ema50_ok  else "#e74c3c")}
-    {row("white",   "EMA 200",  px(last["ema200"]), "#c0392b", "UEBER EMA200" if ema200_ok else "UNTER EMA200", "#27ae60" if ema200_ok else "#e74c3c")}
-    {row("#fafafa", "RSI (14)", str(last["rsi"]),   rc(last["rsi"]),  "Ueberkauft" if (last["rsi"] or 0)>70 else ("Ueberverkauft" if (last["rsi"] or 0)<30 else "Neutral"), rc(last["rsi"]))}
-    {row("white",   "MACD",     str(last["macd"]),  tc(last["macd"]), "Bullish" if (last["macd"] or 0)>0 else "Bearish", tc(last["macd"]))}
-    {row("#fafafa", "Hist",     str(last["hist"]),  tc(last["hist"]), "Momentum steigt" if (last["hist"] or 0)>0 else "Momentum faellt", tc(last["hist"]))}
-  </table>
-  <div style="background:white;border-radius:8px;padding:22px">{html_text}</div>
-  <div style="text-align:center;margin-top:14px;font-size:11px;color:#aaa">Automatisch generiert · Keine Anlageberatung</div>
-</div>"""
+    nb, nd = len(signals_bull), len(signals_bear)
+    total = max(nb + nd, 1)
+    bull_pct = round(nb / total * 100)
+    bear_pct = 100 - bull_pct
+    main_bull = bull_pct >= bear_pct
 
-def send_email_func(subject, html_body, absender, passwort, empfaenger):
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject; msg["From"] = absender; msg["To"] = empfaenger
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-        s.login(absender, passwort)
-        s.sendmail(absender, empfaenger, msg.as_string())
+    # Kursziele aus jüngster Volatilität
+    recent = [d["price"] for d in data[-10:]]
+    atr = (max(recent) - min(recent)) / len(recent)
+    target_main = p + atr * 1.5 if main_bull else p - atr * 1.5
+    target_alt  = p - atr if main_bull else p + atr
+    inval       = p - atr * 2 if main_bull else p + atr * 2
 
+    if bull_pct >= 70:
+        empfehlung = "Vorsichtiger Long-Aufbau möglich"
+    elif bear_pct >= 70:
+        empfehlung = "Kein Long-Einstieg empfohlen"
+    else:
+        empfehlung = "Abwarten auf Bestätigung"
+
+    return {
+        "main_bull": main_bull,
+        "bull_pct": bull_pct,
+        "bear_pct": bear_pct,
+        "target_main": target_main,
+        "target_alt": target_alt,
+        "inval": inval,
+        "signals_bull": signals_bull,
+        "signals_bear": signals_bear,
+        "empfehlung": empfehlung,
+        "current": p,
+    }
+
+# ── Anzeige-Hilfsfunktionen ────────────────────────────────────────────────────
 def fmt_fund_df(fund):
     def fp(v): return f"{v:.2f}" if v is not None else "—"
     def pct(v): return f"{v*100:.1f} %" if v is not None else "—"
-    def mc(v): return (f"${v/1e12:.2f} T" if v >= 1e12 else f"${v/1e9:.2f} B") if v else "—"
+    def mc(v): return (f"${v/1e12:.2f} T" if v>=1e12 else f"${v/1e9:.2f} B") if v else "—"
     return pd.DataFrame([
         ("Marktkapitalisierung", mc(fund.get("marketCap"))),
         ("KGV Trailing",         fp(fund.get("trailingPE"))),
@@ -317,37 +225,97 @@ def fmt_fund_df(fund):
         ("52W-Hoch / Tief",      f"{fp(fund.get('week52High'))} / {fp(fund.get('week52Low'))}"),
     ], columns=["Kennzahl", "Wert"])
 
-# ── Hauptbereich ───────────────────────────────────────────────────────────────
+def show_prognose(prog, einheit):
+    farbe_main = "#27ae60" if prog["main_bull"] else "#e74c3c"
+    farbe_alt  = "#e74c3c" if prog["main_bull"] else "#27ae60"
+    richtung   = "📈 BULLISCH" if prog["main_bull"] else "📉 BÄRISCH"
+    p = prog["current"]
 
+    st.markdown(f"""
+    <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:10px;
+                padding:20px;margin-bottom:16px;border-left:6px solid {farbe_main}">
+      <div style="font-size:11px;letter-spacing:2px;color:#aaa">2-TAGES-PROGNOSE (48h)</div>
+      <div style="font-size:28px;font-weight:bold;color:{farbe_main};margin:6px 0">{richtung}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        pct_main = (prog["target_main"]-p)/p*100
+        st.markdown(f"""
+        <div style="background:#0d1b0d;border:2px solid {farbe_main};border-radius:8px;padding:16px">
+          <div style="color:#aaa;font-size:11px">HAUPTSZENARIO ({prog['bull_pct']}%)</div>
+          <div style="color:{farbe_main};font-size:20px;font-weight:bold;margin:6px 0">
+            {prog['target_main']:,.2f} {einheit}
+          </div>
+          <div style="color:{farbe_main};font-size:13px">{pct_main:+.2f}% vom aktuellen Kurs</div>
+        </div>""", unsafe_allow_html=True)
+    with c2:
+        pct_alt = (prog["target_alt"]-p)/p*100
+        st.markdown(f"""
+        <div style="background:#1b0d0d;border:2px solid {farbe_alt};border-radius:8px;padding:16px">
+          <div style="color:#aaa;font-size:11px">ALTERNATIVSZENARIO ({prog['bear_pct']}%)</div>
+          <div style="color:{farbe_alt};font-size:20px;font-weight:bold;margin:6px 0">
+            {prog['target_alt']:,.2f} {einheit}
+          </div>
+          <div style="color:{farbe_alt};font-size:13px">{pct_alt:+.2f}% vom aktuellen Kurs</div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">
+      <div style="background:#1a1a2e;border-radius:6px;padding:10px 16px;flex:1">
+        <span style="color:#aaa;font-size:11px">INVALIDIERUNGSLEVEL</span><br>
+        <span style="color:#f39c12;font-weight:bold">{prog['inval']:,.2f} {einheit}</span>
+      </div>
+      <div style="background:#1a1a2e;border-radius:6px;padding:10px 16px;flex:2">
+        <span style="color:#aaa;font-size:11px">HANDLUNGSEMPFEHLUNG</span><br>
+        <span style="color:white;font-weight:bold">{prog['empfehlung']}</span>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.expander("📊 Signal-Details"):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Bullische Signale**")
+            for s in prog["signals_bull"]:
+                st.markdown(f"🟢 {s}")
+        with c2:
+            st.markdown("**Bärische Signale**")
+            for s in prog["signals_bear"]:
+                st.markdown(f"🔴 {s}")
+
+# ── Hauptbereich ───────────────────────────────────────────────────────────────
 st.title("📈 Aktienmarkt Analyse")
 st.caption("Elliott Wave · RSI · MACD · EMA 50/200 · Fundamentaldaten · 48h-Prognose")
 
 if not ausgewaehlt:
-    st.warning("Bitte mindestens eine Aktie in der Sidebar auswählen.")
+    st.warning("Bitte mindestens eine Aktie auswählen.")
     st.stop()
 
-api_key = api_key.strip()
-if not api_key:
-    st.warning("Bitte Anthropic API Key in der Sidebar eintragen.")
-    st.stop()
-if not api_key.startswith("sk-"):
-    st.error("API Key ungültig — muss mit 'sk-' beginnen.")
-    st.stop()
+def send_email_func(subject, html_body, absender, passwort, emp):
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    msg = MIMEMultipart("alternative")
+    msg["Subject"]=subject; msg["From"]=absender; msg["To"]=emp
+    msg.attach(MIMEText(html_body,"html","utf-8"))
+    with smtplib.SMTP_SSL("smtp.gmail.com",465) as s:
+        s.login(absender,passwort)
+        s.sendmail(absender,emp,msg.as_string())
 
 if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
     heute = datetime.date.today().strftime("%d.%m.%Y")
-    gesamt_html = ""
     bar = st.progress(0, text="Starte...")
+    n = len(ausgewaehlt)
 
     for idx, aktie in enumerate(ausgewaehlt):
         name    = aktie["name"]
         symbol  = aktie["symbol"]
         farbe   = aktie["color"]
         einheit = aktie["einheit"]
-        n       = len(ausgewaehlt)
 
         st.subheader(name, divider="gray")
-        col1, col2 = st.columns(2)
 
         bar.progress((idx*3+1)/(n*3), text=f"{name}: Kursdaten...")
         try:
@@ -357,11 +325,20 @@ if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
         except Exception as e:
             st.error(f"Kursdaten-Fehler: {e}"); continue
 
+        # 1. PROGNOSE OBEN
+        prog = generate_prognose(data)
+        show_prognose(prog, einheit)
+
+        st.markdown("---")
+
+        # 2. Technische Indikatoren
+        bar.progress((idx*3+2)/(n*3), text=f"{name}: Indikatoren & Fundamentaldaten...")
+        col1, col2 = st.columns(2)
         with col1:
             ema50_ok  = last["price"] > (last["ema50"]  or 0)
             ema200_ok = last["price"] > (last["ema200"] or 0)
             rsi_val   = last["rsi"] or 0
-            st.metric("Kurs", f"{last['price']:,.2f} {einheit}")
+            st.metric("Aktueller Kurs", f"{last['price']:,.2f} {einheit}")
             st.dataframe(pd.DataFrame([
                 ["EMA 50",     f"{last['ema50']:,.2f}" if last['ema50'] else "—", "🟢 darüber" if ema50_ok  else "🔴 darunter"],
                 ["EMA 200",    f"{last['ema200']:,.2f}" if last['ema200'] else "—", "🟢 darüber" if ema200_ok else "🔴 darunter"],
@@ -370,40 +347,25 @@ if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
                 ["Histogramm", str(last["hist"]), "🟢 steigt"  if (last["hist"] or 0)>0 else "🔴 fällt"],
             ], columns=["Indikator", "Wert", "Status"]), hide_index=True, use_container_width=True)
 
-        bar.progress((idx*3+2)/(n*3), text=f"{name}: Fundamentaldaten...")
-        fund, fund_err = fetch_fundamentals(symbol)
+        # 3. Fundamentaldaten
+        fund = fetch_fundamentals(symbol)
         with col2:
             if fund:
                 st.markdown("**Fundamentaldaten**")
                 st.dataframe(fmt_fund_df(fund), hide_index=True, use_container_width=True)
             else:
-                st.warning(f"Keine Fundamentaldaten: {fund_err}")
-                with st.expander("🔍 Debug"):
-                    st.code(fund_err)
+                st.info("Keine Fundamentaldaten verfügbar (Index oder API-Limit)")
 
-        bar.progress((idx*3+3)/(n*3), text=f"{name}: Claude analysiert...")
-        try:
-            with st.spinner(f"Claude analysiert {name}..."):
-                analyse_text = claude_analyse(name, einheit, data, fund, api_key)
-        except Exception as e:
-            st.error(f"API-Fehler: {e}"); continue
-
-        with st.expander("📋 Vollständige Analyse", expanded=True):
-            st.markdown(analyse_text)
-
-        if send_mail:
-            gesamt_html += build_email_html(name, einheit, farbe, data, analyse_text, fund)
-            gesamt_html += '<hr style="margin:10px 0 30px 0;border:none;border-top:3px solid #eee">'
-
-        if idx < len(ausgewaehlt) - 1:
+        bar.progress((idx*3+3)/(n*3), text=f"{name}: fertig ✓")
+        if idx < n-1:
             time.sleep(1)
 
     bar.progress(1.0, text="Fertig ✓")
 
-    if send_mail and gesamt_html:
+    if send_mail:
         try:
-            send_email_func(f"Aktienmarkt Analyse - {heute}",
-                            gesamt_html, gmail_absender, gmail_passwort, empfaenger)
+            send_email_func(f"Aktienmarkt Analyse - {heute}", "<p>Analyse abgeschlossen.</p>",
+                            gmail_absender, gmail_passwort, empfaenger)
             st.success(f"✅ E-Mail gesendet an {empfaenger}")
         except Exception as e:
             st.error(f"E-Mail-Fehler: {e}")
