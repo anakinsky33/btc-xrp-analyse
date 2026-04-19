@@ -657,9 +657,14 @@ if st.button("🚀 Analyse starten", type="primary", width="stretch"):
             bar.progress(fortschritt + 0.75/n, text=f"{name}: Gemini analysiert...")
             analyse_text = ai_gemini(name, typ, data, fund, prog, ai_key)
 
-        # 4. Karte rendern
+        # 4. Karte rendern (iframe für CSS-Isolation vom Streamlit-Theme)
+        import streamlit.components.v1 as components
         card_html = render_card(name, typ, einheit, last, prog, fund, analyse_text)
-        st.markdown(card_html, unsafe_allow_html=True)
+        full_html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>body{{margin:0;padding:0;background:transparent}}</style></head>
+<body>{card_html}</body></html>"""
+        height = 2400 if analyse_text else 800
+        components.html(full_html, height=height, scrolling=False)
 
         # HTML für E-Mail sammeln
         mail_html += render_email_card(name, typ, einheit, last, prog, fund, analyse_text)
