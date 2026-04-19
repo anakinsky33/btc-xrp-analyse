@@ -42,6 +42,25 @@ with st.sidebar:
     if api_key:
         masked = api_key[:8] + "..." + api_key[-4:]
         st.caption(f"Key: `{masked}` ({len(api_key)} Zeichen)")
+        if st.button("🔑 Key testen", use_container_width=True):
+            test_payload = json.dumps({
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 10,
+                "messages": [{"role": "user", "content": "Hi"}]
+            }).encode()
+            test_req = urllib.request.Request(
+                "https://api.anthropic.com/v1/messages", data=test_payload,
+                headers={"Content-Type": "application/json",
+                         "x-api-key": api_key.strip(),
+                         "anthropic-version": "2023-06-01"}, method="POST")
+            try:
+                with urllib.request.urlopen(test_req, timeout=15) as r:
+                    st.success("✅ API Key gültig!")
+            except urllib.error.HTTPError as e:
+                body = e.read().decode("utf-8", errors="replace")
+                st.error(f"❌ {e.code}: {body}")
+            except Exception as e:
+                st.error(f"❌ {e}")
 
     st.divider()
     st.subheader("📧 E-Mail (optional)")
@@ -202,8 +221,12 @@ def claude_analyse(name, einheit, data, fund, key):
         "https://api.anthropic.com/v1/messages", data=payload,
         headers={"Content-Type": "application/json", "x-api-key": key,
                  "anthropic-version": "2023-06-01"}, method="POST")
-    with urllib.request.urlopen(req, timeout=90) as r:
-        return json.loads(r.read())["content"][0]["text"]
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            return json.loads(r.read())["content"][0]["text"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise Exception(f"HTTP {e.code}: {body}")
 
 # ── E-Mail HTML ────────────────────────────────────────────────────────────────
 
