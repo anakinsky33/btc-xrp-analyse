@@ -33,14 +33,30 @@ with st.sidebar:
         if st.checkbox(a["name"], value=True):
             ausgewaehlt.append(a)
     st.divider()
-    st.markdown("**🔑 Fundamentaldaten-API**")
+    st.markdown("**🔑 Fundamentaldaten (Finnhub)**")
     finnhub_key = st.text_input(
         "Finnhub API Key",
         value=get_secret("FINNHUB_API_KEY"),
         type="password",
         placeholder="Kostenlos auf finnhub.io",
-        help="Gratis-Key auf finnhub.io registrieren (kein Kreditkarte nötig)",
+        help="Gratis-Key auf finnhub.io registrieren",
     )
+
+    st.divider()
+    st.markdown("**🤖 KI-Analyse**")
+    ai_modus = st.radio(
+        "Anbieter",
+        ["📊 Regelbasiert (kein Key)", "🔵 Claude (Anthropic)", "🟢 Gemini (Google – kostenlos)"],
+        index=0,
+    )
+    if "Claude" in ai_modus:
+        ai_key = st.text_input("Anthropic API Key", value=get_secret("ANTHROPIC_API_KEY"),
+                               type="password", placeholder="sk-ant-...")
+    elif "Gemini" in ai_modus:
+        ai_key = st.text_input("Google AI Key", value=get_secret("GOOGLE_AI_KEY"),
+                               type="password", placeholder="AIza...")
+    else:
+        ai_key = ""
 
     st.divider()
     st.subheader("📧 E-Mail (optional)")
@@ -292,6 +308,58 @@ def generate_prognose(data):
         "current": p,
     }
 
+# ── KI-Analyse ────────────────────────────────────────────────────────────────
+def _prompt(name, last, fund, prog):
+    def pct(v): return f"{v*100:.1f}%" if v else "—"
+    def fp(v):  return f"{v:.2f}" if v else "—"
+    f = fund or {}
+    return f"""Du bist ein erfahrener Aktienanalyst. Erstelle eine präzise Tagesanalyse für {name}.
+
+TECHNISCHE DATEN (heute):
+- Kurs: {last['price']:.2f} | EMA50: {fp(last['ema50'])} | EMA200: {fp(last['ema200'])}
+- RSI(14): {fp(last['rsi'])} | MACD: {fp(last['macd'])} | Signal: {fp(last['signal'])} | Hist: {fp(last['hist'])}
+- Prognose: {'BULLISCH' if prog['main_bull'] else 'BÄRISCH'} ({prog['bull_pct']}% Bull / {prog['bear_pct']}% Bear)
+- Bullische Signale: {', '.join(prog['signals_bull']) or '—'}
+- Bärische Signale: {', '.join(prog['signals_bear']) or '—'}
+
+FUNDAMENTALDATEN:
+- Marktkapitalisierung: {fp(f.get('marketCap'))} | KGV: {fp(f.get('trailingPE'))} | EPS: {fp(f.get('trailingEps'))}
+- Gewinnmarge: {pct(f.get('profitMargins'))} | ROE: {pct(f.get('returnOnEquity'))} | Div-Rendite: {pct(f.get('dividendYield'))}
+- 52W-Hoch: {fp(f.get('week52High'))} | 52W-Tief: {fp(f.get('week52Low'))}
+
+Schreibe eine strukturierte Analyse mit:
+1. Marktlage & Trend (2-3 Sätze)
+2. Technische Bewertung – EMA, RSI, MACD interpretieren (3-4 Sätze)
+3. Fundamentale Einschätzung (2-3 Sätze, falls Daten vorhanden)
+4. Elliott-Wellen-Einschätzung (kurz, 2 Sätze)
+5. 48h-Ausblick & Handlungsempfehlung (2-3 Sätze)
+
+Antworte auf Deutsch, professionell und konkret."""
+
+def ai_analyse_claude(name, last, fund, prog, api_key):
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5",
+            max_tokens=800,
+            messages=[{"role": "user", "content": _prompt(name, last, fund, prog)}],
+        )
+        return msg.content[0].text
+    except Exception as e:
+        return f"Claude-Fehler: {e}"
+
+def ai_analyse_gemini(name, last, fund, prog, api_key):
+    try:
+        body = json.dumps({"contents": [{"parts": [{"text": _prompt(name, last, fund, prog)}]}]}).encode()
+        url  = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        req  = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            resp = json.loads(r.read())
+        return resp["candidates"][0]["content"]["parts"][0]["text"]
+    except Exception as e:
+        return f"Gemini-Fehler: {e}"
+
 # ── Anzeige-Hilfsfunktionen ────────────────────────────────────────────────────
 def fmt_fund_df(fund):
     def fp(v): return f"{v:.2f}" if v is not None else "—"
@@ -427,6 +495,18 @@ if st.button("🚀 Analyse starten", type="primary", width="stretch"):
                     st.warning(f"FMP-Fehler: {fmp_err}")
                 else:
                     st.info("Keine Fundamentaldaten verfügbar (Index oder API-Limit)")
+
+        # 4. KI-Analyse
+        if "Claude" in ai_modus and ai_key:
+            bar.progress((idx*3+2.5)/(n*3), text=f"{name}: Claude-Analyse...")
+            analyse_text = ai_analyse_claude(name, last, fund, prog, ai_key)
+            st.markdown("### 🔵 KI-Analyse (Claude)")
+            st.markdown(analyse_text)
+        elif "Gemini" in ai_modus and ai_key:
+            bar.progress((idx*3+2.5)/(n*3), text=f"{name}: Gemini-Analyse...")
+            analyse_text = ai_analyse_gemini(name, last, fund, prog, ai_key)
+            st.markdown("### 🟢 KI-Analyse (Gemini)")
+            st.markdown(analyse_text)
 
         bar.progress((idx*3+3)/(n*3), text=f"{name}: fertig ✓")
         if idx < n-1:
