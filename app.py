@@ -42,8 +42,9 @@ with st.sidebar:
 
 # ── Datenabruf ─────────────────────────────────────────────────────────────────
 def fetch_yahoo(symbol, days=400):
-    end   = int(datetime.datetime.utcnow().timestamp())
-    start = int((datetime.datetime.utcnow() - datetime.timedelta(days=days)).timestamp())
+    now   = datetime.datetime.now(datetime.timezone.utc)
+    end   = int(now.timestamp())
+    start = int((now - datetime.timedelta(days=days)).timestamp())
     url   = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&period1={start}&period2={end}"
     req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=20) as r:
@@ -282,7 +283,7 @@ def send_email_func(subject, html_body, absender, passwort, emp):
         s.login(absender,passwort)
         s.sendmail(absender,emp,msg.as_string())
 
-if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
+if st.button("🚀 Analyse starten", type="primary", width='stretch'):
     heute = datetime.date.today().strftime("%d.%m.%Y")
     bar = st.progress(0, text="Starte...")
     n = len(ausgewaehlt)
@@ -323,14 +324,14 @@ if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
                 ["RSI (14)",   str(rsi_val), "🔴 Überkauft" if rsi_val>70 else ("🟢 Überverkauft" if rsi_val<30 else "🟡 Neutral")],
                 ["MACD",       str(last["macd"]), "🟢 Bullish" if (last["macd"] or 0)>0 else "🔴 Bearish"],
                 ["Histogramm", str(last["hist"]), "🟢 steigt"  if (last["hist"] or 0)>0 else "🔴 fällt"],
-            ], columns=["Indikator", "Wert", "Status"]), hide_index=True, use_container_width=True)
+            ], columns=["Indikator", "Wert", "Status"]), hide_index=True, width='stretch')
 
         # 3. Fundamentaldaten
         fund = fetch_fundamentals(symbol)
         with col2:
             if fund:
                 st.markdown("**Fundamentaldaten**")
-                st.dataframe(fmt_fund_df(fund), hide_index=True, use_container_width=True)
+                st.dataframe(fmt_fund_df(fund), hide_index=True, width='stretch')
             else:
                 st.info("Keine Fundamentaldaten verfügbar (Index oder API-Limit)")
 
