@@ -226,64 +226,42 @@ def fmt_fund_df(fund):
     ], columns=["Kennzahl", "Wert"])
 
 def show_prognose(prog, einheit):
-    farbe_main = "#27ae60" if prog["main_bull"] else "#e74c3c"
-    farbe_alt  = "#e74c3c" if prog["main_bull"] else "#27ae60"
-    richtung   = "📈 BULLISCH" if prog["main_bull"] else "📉 BÄRISCH"
-    p = prog["current"]
+    richtung = "📈 BULLISCH" if prog["main_bull"] else "📉 BÄRISCH"
+    farbe    = "green" if prog["main_bull"] else "red"
+    p        = prog["current"]
+    pct_main = (prog["target_main"] - p) / p * 100
+    pct_alt  = (prog["target_alt"]  - p) / p * 100
 
-    st.markdown(f"""
-    <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);border-radius:10px;
-                padding:20px;margin-bottom:16px;border-left:6px solid {farbe_main}">
-      <div style="font-size:11px;letter-spacing:2px;color:#aaa">2-TAGES-PROGNOSE (48h)</div>
-      <div style="font-size:28px;font-weight:bold;color:{farbe_main};margin:6px 0">{richtung}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.subheader(f"🕐 2-Tages-Prognose (48h) — :{farbe}[{richtung}]")
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1:
-        pct_main = (prog["target_main"]-p)/p*100
-        st.markdown(f"""
-        <div style="background:#0d1b0d;border:2px solid {farbe_main};border-radius:8px;padding:16px">
-          <div style="color:#aaa;font-size:11px">HAUPTSZENARIO ({prog['bull_pct']}%)</div>
-          <div style="color:{farbe_main};font-size:20px;font-weight:bold;margin:6px 0">
-            {prog['target_main']:,.2f} {einheit}
-          </div>
-          <div style="color:{farbe_main};font-size:13px">{pct_main:+.2f}% vom aktuellen Kurs</div>
-        </div>""", unsafe_allow_html=True)
+        st.metric(
+            f"Hauptszenario ({prog['bull_pct']}%)",
+            f"{prog['target_main']:,.2f} {einheit}",
+            f"{pct_main:+.2f}%"
+        )
     with c2:
-        pct_alt = (prog["target_alt"]-p)/p*100
-        st.markdown(f"""
-        <div style="background:#1b0d0d;border:2px solid {farbe_alt};border-radius:8px;padding:16px">
-          <div style="color:#aaa;font-size:11px">ALTERNATIVSZENARIO ({prog['bear_pct']}%)</div>
-          <div style="color:{farbe_alt};font-size:20px;font-weight:bold;margin:6px 0">
-            {prog['target_alt']:,.2f} {einheit}
-          </div>
-          <div style="color:{farbe_alt};font-size:13px">{pct_alt:+.2f}% vom aktuellen Kurs</div>
-        </div>""", unsafe_allow_html=True)
+        st.metric(
+            f"Alternativszenario ({prog['bear_pct']}%)",
+            f"{prog['target_alt']:,.2f} {einheit}",
+            f"{pct_alt:+.2f}%"
+        )
+    with c3:
+        st.metric("Invalidierungslevel", f"{prog['inval']:,.2f} {einheit}")
 
-    st.markdown(f"""
-    <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">
-      <div style="background:#1a1a2e;border-radius:6px;padding:10px 16px;flex:1">
-        <span style="color:#aaa;font-size:11px">INVALIDIERUNGSLEVEL</span><br>
-        <span style="color:#f39c12;font-weight:bold">{prog['inval']:,.2f} {einheit}</span>
-      </div>
-      <div style="background:#1a1a2e;border-radius:6px;padding:10px 16px;flex:2">
-        <span style="color:#aaa;font-size:11px">HANDLUNGSEMPFEHLUNG</span><br>
-        <span style="color:white;font-weight:bold">{prog['empfehlung']}</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.info(f"**Handlungsempfehlung:** {prog['empfehlung']}")
 
     with st.expander("📊 Signal-Details"):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("**Bullische Signale**")
+            st.markdown("**🟢 Bullische Signale**")
             for s in prog["signals_bull"]:
-                st.markdown(f"🟢 {s}")
+                st.markdown(f"- {s}")
         with c2:
-            st.markdown("**Bärische Signale**")
+            st.markdown("**🔴 Bärische Signale**")
             for s in prog["signals_bear"]:
-                st.markdown(f"🔴 {s}")
+                st.markdown(f"- {s}")
 
 # ── Hauptbereich ───────────────────────────────────────────────────────────────
 st.title("📈 Aktienmarkt Analyse")
