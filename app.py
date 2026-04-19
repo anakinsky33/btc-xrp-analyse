@@ -33,6 +33,10 @@ with st.sidebar:
         if st.checkbox(a["name"], value=True):
             ausgewaehlt.append(a)
     st.divider()
+    fmp_key = st.text_input("FMP API Key (optional)", value=get_secret("FMP_API_KEY"),
+                             type="password", help="Kostenlos: financialmodelingprep.com")
+
+    st.divider()
     st.subheader("📧 E-Mail (optional)")
     send_mail = st.toggle("E-Mail senden", value=False)
     if send_mail:
@@ -53,6 +57,41 @@ def fetch_yahoo(symbol, days=400):
     return [{"date": datetime.date.fromtimestamp(ts).isoformat(), "close": round(float(c), 4)}
             for ts, c in zip(result["timestamp"], result["indicators"]["quote"][0]["close"])
             if c is not None and c > 0]
+
+def fetch_fundamentals_fmp(symbol, api_key):
+    """Financial Modeling Prep - kostenloser API Key unter financialmodelingprep.com"""
+    if not api_key or symbol.startswith("^"):
+        return {}
+    try:
+        url = f"https://financialmodelingprep.com/api/v3/key-metrics/{symbol}?limit=1&apikey={api_key}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read())
+        if not data or not isinstance(data, list):
+            return {}
+        m = data[0]
+        url2 = f"https://financialmodelingprep.com/api/v3/profile/{symbol}?apikey={api_key}"
+        req2 = urllib.request.Request(url2, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req2, timeout=15) as r2:
+            prof = json.loads(r2.read())
+        p = prof[0] if prof else {}
+        return {
+            "marketCap":      p.get("mktCap"),
+            "trailingPE":     m.get("peRatio"),
+            "forwardPE":      None,
+            "priceToBook":    m.get("pbRatio"),
+            "trailingEps":    m.get("netIncomePerShare"),
+            "dividendYield":  m.get("dividendYield"),
+            "revenueGrowth":  None,
+            "earningsGrowth": m.get("epsGrowth"),
+            "profitMargins":  m.get("netProfitMargin"),
+            "returnOnEquity": m.get("roe"),
+            "debtToEquity":   m.get("debtToEquity"),
+            "week52High":     p.get("range", "").split("-")[-1].strip() if p.get("range") else None,
+            "week52Low":      p.get("range", "").split("-")[0].strip() if p.get("range") else None,
+        }
+    except Exception:
+        return {}
 
 def fetch_fundamentals(symbol):
     url = (f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}"
@@ -364,7 +403,7 @@ if st.button("🚀 Analyse starten", type="primary", width='stretch'):
             ], columns=["Indikator", "Wert", "Status"]), hide_index=True, width='stretch')
 
         # 3. Fundamentaldaten
-        fund = fetch_fundamentals(symbol)
+        fund = fetch_fundamentals_fmp(symbol, fmp_key) or fetch_fundamentals(symbol)
         with col2:
             if fund:
                 st.markdown("**Fundamentaldaten**")
