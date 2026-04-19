@@ -384,7 +384,7 @@ def send_email_func(subject, html_body, absender, passwort, emp):
         s.login(absender,passwort)
         s.sendmail(absender,emp,msg.as_string())
 
-if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
+if st.button("🚀 Analyse starten", type="primary", width="stretch"):
     heute = datetime.date.today().strftime("%d.%m.%Y")
     bar = st.progress(0, text="Starte...")
     n = len(ausgewaehlt)
@@ -425,7 +425,7 @@ if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
                 ["RSI (14)",   str(rsi_val), "🔴 Überkauft" if rsi_val>70 else ("🟢 Überverkauft" if rsi_val<30 else "🟡 Neutral")],
                 ["MACD",       str(last["macd"]), "🟢 Bullish" if (last["macd"] or 0)>0 else "🔴 Bearish"],
                 ["Histogramm", str(last["hist"]), "🟢 steigt"  if (last["hist"] or 0)>0 else "🔴 fällt"],
-            ], columns=["Indikator", "Wert", "Status"]), hide_index=True, use_container_width=True)
+            ], columns=["Indikator", "Wert", "Status"]), hide_index=True, width="stretch")
 
         # 3. Fundamentaldaten
         fund_raw = fetch_fundamentals_fmp(symbol, fmp_key)
@@ -436,7 +436,7 @@ if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
         with col2:
             if fund:
                 st.markdown("**Fundamentaldaten**")
-                st.dataframe(fmt_fund_df(fund), hide_index=True, use_container_width=True)
+                st.dataframe(fmt_fund_df(fund), hide_index=True, width="stretch")
             else:
                 if fmp_err:
                     st.warning(f"FMP-Fehler: {fmp_err}")
