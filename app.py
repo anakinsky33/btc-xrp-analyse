@@ -34,12 +34,12 @@ with st.sidebar:
             ausgewaehlt.append(a)
     st.divider()
     st.markdown("**🔑 Fundamentaldaten-API**")
-    fmp_key = st.text_input(
-        "FMP API Key",
-        value=get_secret("FMP_API_KEY"),
+    finnhub_key = st.text_input(
+        "Finnhub API Key",
+        value=get_secret("FINNHUB_API_KEY"),
         type="password",
-        placeholder="Kostenlos auf financialmodelingprep.com",
-        help="Gratis-Key auf financialmodelingprep.com registrieren",
+        placeholder="Kostenlos auf finnhub.io",
+        help="Gratis-Key auf finnhub.io registrieren (kein Kreditkarte nötig)",
     )
 
     st.divider()
@@ -64,59 +64,44 @@ def fetch_yahoo(symbol, days=400):
             for ts, c in zip(result["timestamp"], result["indicators"]["quote"][0]["close"])
             if c is not None and c > 0]
 
-def fetch_fundamentals_fmp(symbol, api_key):
-    """FMP free-tier endpoints: /quote (PE, EPS, MarketCap, 52w) + /profile (dividend, ratios)"""
+def fetch_fundamentals_finnhub(symbol, api_key):
+    """Finnhub free-tier: /stock/metric (PE, EPS, 52w, margins, ROE) + /stock/profile2 (marketCap)"""
     if not api_key or symbol.startswith("^"):
         return {}
-    errors = []
     try:
-        # /quote is available on the free plan and contains most key metrics
-        url = f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={api_key}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=15) as r:
-            raw = r.read()
-        data = json.loads(raw)
-        if isinstance(data, dict) and data.get("Error Message"):
-            errors.append(data["Error Message"])
-            return {"_error": data["Error Message"]}
-        if not data or not isinstance(data, list):
-            errors.append(f"Unexpected response: {str(data)[:100]}")
-            return {"_error": str(data)[:100]}
-        q = data[0]
+        h = {"User-Agent": "Mozilla/5.0", "X-Finnhub-Token": api_key}
+
+        url1 = f"https://finnhub.io/api/v1/stock/metric?symbol={symbol}&metric=all&token={api_key}"
+        req1 = urllib.request.Request(url1, headers=h)
+        with urllib.request.urlopen(req1, timeout=15) as r:
+            raw = json.loads(r.read())
+        if "error" in raw:
+            return {"_error": raw["error"]}
+        m = raw.get("metric", {})
+
+        url2 = f"https://finnhub.io/api/v1/stock/profile2?symbol={symbol}&token={api_key}"
+        req2 = urllib.request.Request(url2, headers=h)
+        with urllib.request.urlopen(req2, timeout=15) as r:
+            prof = json.loads(r.read())
+
+        mktcap = prof.get("marketCapitalization")
+        return {
+            "marketCap":      mktcap * 1e6 if mktcap else None,
+            "trailingPE":     m.get("peTTM"),
+            "forwardPE":      m.get("peNormalizedAnnual"),
+            "priceToBook":    m.get("pbQuarterly"),
+            "trailingEps":    m.get("epsBasicExclExtraItemsTTM"),
+            "dividendYield":  m.get("dividendYieldIndicatedAnnual") / 100 if m.get("dividendYieldIndicatedAnnual") else None,
+            "revenueGrowth":  m.get("revenueGrowthTTMYoy") / 100 if m.get("revenueGrowthTTMYoy") else None,
+            "earningsGrowth": m.get("epsGrowthTTMYoy") / 100 if m.get("epsGrowthTTMYoy") else None,
+            "profitMargins":  m.get("netProfitMarginTTM") / 100 if m.get("netProfitMarginTTM") else None,
+            "returnOnEquity": m.get("roeTTM") / 100 if m.get("roeTTM") else None,
+            "debtToEquity":   m.get("totalDebt/totalEquityQuarterly"),
+            "week52High":     m.get("52WeekHigh"),
+            "week52Low":      m.get("52WeekLow"),
+        }
     except Exception as e:
-        return {"_error": f"FMP /quote: {e}"}
-
-    # /profile for dividend yield and debt-to-equity (also free)
-    prof = {}
-    try:
-        url2 = f"https://financialmodelingprep.com/api/v3/profile/{symbol}?apikey={api_key}"
-        req2 = urllib.request.Request(url2, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req2, timeout=15) as r2:
-            prof_data = json.loads(r2.read())
-        if isinstance(prof_data, list) and prof_data:
-            prof = prof_data[0]
-    except Exception:
-        pass
-
-    div_yield = prof.get("lastDiv")
-    price = q.get("price") or 1
-    div_yield_pct = (div_yield / price) if div_yield else None
-
-    return {
-        "marketCap":      q.get("marketCap"),
-        "trailingPE":     q.get("pe"),
-        "forwardPE":      None,
-        "priceToBook":    prof.get("bookValuePerShare") and price / prof["bookValuePerShare"] if prof.get("bookValuePerShare") else None,
-        "trailingEps":    q.get("eps"),
-        "dividendYield":  div_yield_pct,
-        "revenueGrowth":  None,
-        "earningsGrowth": None,
-        "profitMargins":  None,
-        "returnOnEquity": None,
-        "debtToEquity":   None,
-        "week52High":     q.get("yearHigh"),
-        "week52Low":      q.get("yearLow"),
-    }
+        return {"_error": f"Finnhub: {e}"}
 
 def fetch_fundamentals(symbol):
     url = (f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}"
@@ -428,7 +413,7 @@ if st.button("🚀 Analyse starten", type="primary", width="stretch"):
             ], columns=["Indikator", "Wert", "Status"]), hide_index=True, width="stretch")
 
         # 3. Fundamentaldaten
-        fund_raw = fetch_fundamentals_fmp(symbol, fmp_key)
+        fund_raw = fetch_fundamentals_finnhub(symbol, finnhub_key)
         fmp_err = fund_raw.pop("_error", None) if fund_raw else None
         fund = fund_raw if (fund_raw and any(v is not None for v in fund_raw.values())) else {}
         if not fund:
