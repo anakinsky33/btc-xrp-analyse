@@ -65,39 +65,58 @@ def fetch_yahoo(symbol, days=400):
             if c is not None and c > 0]
 
 def fetch_fundamentals_fmp(symbol, api_key):
-    """Financial Modeling Prep - kostenloser API Key unter financialmodelingprep.com"""
+    """FMP free-tier endpoints: /quote (PE, EPS, MarketCap, 52w) + /profile (dividend, ratios)"""
     if not api_key or symbol.startswith("^"):
         return {}
+    errors = []
     try:
-        url = f"https://financialmodelingprep.com/api/v3/key-metrics/{symbol}?limit=1&apikey={api_key}"
+        # /quote is available on the free plan and contains most key metrics
+        url = f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={api_key}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=15) as r:
-            data = json.loads(r.read())
+            raw = r.read()
+        data = json.loads(raw)
+        if isinstance(data, dict) and data.get("Error Message"):
+            errors.append(data["Error Message"])
+            return {"_error": data["Error Message"]}
         if not data or not isinstance(data, list):
-            return {}
-        m = data[0]
+            errors.append(f"Unexpected response: {str(data)[:100]}")
+            return {"_error": str(data)[:100]}
+        q = data[0]
+    except Exception as e:
+        return {"_error": f"FMP /quote: {e}"}
+
+    # /profile for dividend yield and debt-to-equity (also free)
+    prof = {}
+    try:
         url2 = f"https://financialmodelingprep.com/api/v3/profile/{symbol}?apikey={api_key}"
         req2 = urllib.request.Request(url2, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req2, timeout=15) as r2:
-            prof = json.loads(r2.read())
-        p = prof[0] if prof else {}
-        return {
-            "marketCap":      p.get("mktCap"),
-            "trailingPE":     m.get("peRatio"),
-            "forwardPE":      None,
-            "priceToBook":    m.get("pbRatio"),
-            "trailingEps":    m.get("netIncomePerShare"),
-            "dividendYield":  m.get("dividendYield"),
-            "revenueGrowth":  None,
-            "earningsGrowth": m.get("epsGrowth"),
-            "profitMargins":  m.get("netProfitMargin"),
-            "returnOnEquity": m.get("roe"),
-            "debtToEquity":   m.get("debtToEquity"),
-            "week52High":     p.get("range", "").split("-")[-1].strip() if p.get("range") else None,
-            "week52Low":      p.get("range", "").split("-")[0].strip() if p.get("range") else None,
-        }
+            prof_data = json.loads(r2.read())
+        if isinstance(prof_data, list) and prof_data:
+            prof = prof_data[0]
     except Exception:
-        return {}
+        pass
+
+    div_yield = prof.get("lastDiv")
+    price = q.get("price") or 1
+    div_yield_pct = (div_yield / price) if div_yield else None
+
+    return {
+        "marketCap":      q.get("marketCap"),
+        "trailingPE":     q.get("pe"),
+        "forwardPE":      None,
+        "priceToBook":    prof.get("bookValuePerShare") and price / prof["bookValuePerShare"] if prof.get("bookValuePerShare") else None,
+        "trailingEps":    q.get("eps"),
+        "dividendYield":  div_yield_pct,
+        "revenueGrowth":  None,
+        "earningsGrowth": None,
+        "profitMargins":  None,
+        "returnOnEquity": None,
+        "debtToEquity":   None,
+        "week52High":     q.get("yearHigh"),
+        "week52Low":      q.get("yearLow"),
+    }
 
 def fetch_fundamentals(symbol):
     url = (f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}"
@@ -409,13 +428,20 @@ if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
             ], columns=["Indikator", "Wert", "Status"]), hide_index=True, use_container_width=True)
 
         # 3. Fundamentaldaten
-        fund = fetch_fundamentals_fmp(symbol, fmp_key) or fetch_fundamentals(symbol)
+        fund_raw = fetch_fundamentals_fmp(symbol, fmp_key)
+        fmp_err = fund_raw.pop("_error", None) if fund_raw else None
+        fund = fund_raw if (fund_raw and any(v is not None for v in fund_raw.values())) else {}
+        if not fund:
+            fund = fetch_fundamentals(symbol)
         with col2:
             if fund:
                 st.markdown("**Fundamentaldaten**")
                 st.dataframe(fmt_fund_df(fund), hide_index=True, use_container_width=True)
             else:
-                st.info("Keine Fundamentaldaten verfügbar (Index oder API-Limit)")
+                if fmp_err:
+                    st.warning(f"FMP-Fehler: {fmp_err}")
+                else:
+                    st.info("Keine Fundamentaldaten verfügbar (Index oder API-Limit)")
 
         bar.progress((idx*3+3)/(n*3), text=f"{name}: fertig ✓")
         if idx < n-1:
