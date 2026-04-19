@@ -55,32 +55,49 @@ def fetch_yahoo(symbol, days=400):
             if c is not None and c > 0]
 
 def fetch_fundamentals(symbol):
-    # Versuch 1: yfinance (robuster, handhabt Cookies automatisch)
+    url = (f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}"
+           f"?modules=financialData%2CdefaultKeyStatistics%2CsummaryDetail")
+    data = None
+
+    # Versuch 1: curl_cffi mit Browser-Impersonation (umgeht IP-Blocking)
     try:
-        import yfinance as yf
-        info = yf.Ticker(symbol).info
-        if info and len(info) > 5:
-            def g(k): return info.get(k)
-            fund = {
-                "marketCap": g("marketCap"), "trailingPE": g("trailingPE"),
-                "forwardPE": g("forwardPE"), "priceToBook": g("priceToBook"),
-                "trailingEps": g("trailingEps"), "dividendYield": g("dividendYield"),
-                "revenueGrowth": g("revenueGrowth"), "earningsGrowth": g("earningsGrowth"),
-                "profitMargins": g("profitMargins"), "returnOnEquity": g("returnOnEquity"),
-                "debtToEquity": g("debtToEquity"),
-                "week52High": g("fiftyTwoWeekHigh"), "week52Low": g("fiftyTwoWeekLow"),
-            }
-            if any(v is not None for v in fund.values()):
-                return fund
+        from curl_cffi import requests as cf
+        r = cf.get(url, impersonate="chrome124", timeout=20)
+        data = r.json()
     except Exception:
         pass
-    # Versuch 2: direkte Yahoo Finance API
+
+    # Versuch 2: yfinance
+    if data is None:
+        try:
+            import yfinance as yf
+            info = yf.Ticker(symbol).info
+            if info and len(info) > 5:
+                def g(k): return info.get(k)
+                fund = {
+                    "marketCap": g("marketCap"), "trailingPE": g("trailingPE"),
+                    "forwardPE": g("forwardPE"), "priceToBook": g("priceToBook"),
+                    "trailingEps": g("trailingEps"), "dividendYield": g("dividendYield"),
+                    "revenueGrowth": g("revenueGrowth"), "earningsGrowth": g("earningsGrowth"),
+                    "profitMargins": g("profitMargins"), "returnOnEquity": g("returnOnEquity"),
+                    "debtToEquity": g("debtToEquity"),
+                    "week52High": g("fiftyTwoWeekHigh"), "week52Low": g("fiftyTwoWeekLow"),
+                }
+                if any(v is not None for v in fund.values()):
+                    return fund
+        except Exception:
+            pass
+
+    # Versuch 3: Standard urllib
+    if data is None:
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read())
+        except Exception:
+            return {}
+
     try:
-        url = (f"https://query2.finance.yahoo.com/v11/finance/quoteSummary/{symbol}"
-               f"?modules=financialData%2CdefaultKeyStatistics%2CsummaryDetail")
-        req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=20) as r:
-            data = json.loads(r.read())
         res = data["quoteSummary"]["result"][0]
         fd, ks, sd = res.get("financialData",{}), res.get("defaultKeyStatistics",{}), res.get("summaryDetail",{})
         def v(d, k):
@@ -95,11 +112,9 @@ def fetch_fundamentals(symbol):
             "debtToEquity": v(fd,"debtToEquity"),
             "week52High": v(sd,"fiftyTwoWeekHigh"), "week52Low": v(sd,"fiftyTwoWeekLow"),
         }
-        if any(val is not None for val in fund.values()):
-            return fund
+        return fund if any(val is not None for val in fund.values()) else {}
     except Exception:
-        pass
-    return {}
+        return {}
 
 # ── Indikatoren ────────────────────────────────────────────────────────────────
 def ema(prices, period):
