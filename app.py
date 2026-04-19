@@ -123,9 +123,12 @@ def fetch_fundamentals(symbol):
         }
         if any(val is not None for val in fund.values()):
             return fund, None
-        return {}, "Alle Werte leer"
+        return {}, "Alle Werte leer (Yahoo liefert leere Felder)"
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:300]
+        return {}, f"HTTP {e.code}: {body}"
     except Exception as e:
-        return {}, str(e)
+        return {}, f"{type(e).__name__}: {e}"
 
 # ── Indikatoren ────────────────────────────────────────────────────────────────
 
@@ -375,6 +378,8 @@ if st.button("🚀 Analyse starten", type="primary", use_container_width=True):
                 st.dataframe(fmt_fund_df(fund), hide_index=True, use_container_width=True)
             else:
                 st.warning(f"Keine Fundamentaldaten: {fund_err}")
+                with st.expander("🔍 Debug"):
+                    st.code(fund_err)
 
         bar.progress((idx*3+3)/(n*3), text=f"{name}: Claude analysiert...")
         try:
