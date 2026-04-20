@@ -358,15 +358,19 @@ def ai_claude(name, typ, data, fund, prog, key):
         return f"⚠️ Claude-Fehler: {e}"
 
 def ai_gemini(name, typ, data, fund, prog, key):
-    try:
-        body = json.dumps({"contents":[{"parts":[{"text":_build_prompt(name,typ,data,fund,prog)}]}]}).encode()
-        url  = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}"
-        req  = urllib.request.Request(url, data=body, headers={"Content-Type":"application/json"})
-        with urllib.request.urlopen(req, timeout=45) as r:
-            resp = json.loads(r.read())
-        return resp["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        return f"⚠️ Gemini-Fehler: {e}"
+    prompt = _build_prompt(name, typ, data, fund, prog)
+    body = json.dumps({"contents":[{"parts":[{"text":prompt}]}]}).encode()
+    for model in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-2.0-flash-lite"]:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+            req = urllib.request.Request(url, data=body, headers={"Content-Type":"application/json"})
+            with urllib.request.urlopen(req, timeout=45) as r:
+                resp = json.loads(r.read())
+            return resp["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            if "404" not in str(e):
+                return f"⚠️ Gemini-Fehler: {e}"
+    return "⚠️ Gemini-Fehler: Kein verfügbares Modell gefunden"
 
 # ── Darstellung (identisch mit bewährtem E-Mail-Format) ───────────────────────
 ASSET_FARBEN = {"aktie": "#1a73e8", "krypto": "#f7931a", "metall": "#FFD700"}
