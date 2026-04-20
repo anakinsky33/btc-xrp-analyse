@@ -360,7 +360,7 @@ def ai_claude(name, typ, data, fund, prog, key):
 def ai_gemini(name, typ, data, fund, prog, key):
     try:
         body = json.dumps({"contents":[{"parts":[{"text":_build_prompt(name,typ,data,fund,prog)}]}]}).encode()
-        url  = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        url  = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}"
         req  = urllib.request.Request(url, data=body, headers={"Content-Type":"application/json"})
         with urllib.request.urlopen(req, timeout=45) as r:
             resp = json.loads(r.read())
@@ -368,144 +368,10 @@ def ai_gemini(name, typ, data, fund, prog, key):
     except Exception as e:
         return f"⚠️ Gemini-Fehler: {e}"
 
-# ── Darstellung (Email-Stil) ───────────────────────────────────────────────────
+# ── Darstellung (identisch mit bewährtem E-Mail-Format) ───────────────────────
 ASSET_FARBEN = {"aktie": "#1a73e8", "krypto": "#f7931a", "metall": "#FFD700"}
 
 def render_card(name, typ, einheit, last, prog, fund, analyse_text):
-    import html as hl
-    farbe = ASSET_FARBEN.get(typ, "#888")
-
-    def px(v):  return f"{v:,.4f}" if v else "—"
-    def rc(v):
-        if not v: return "#888"
-        return "#e74c3c" if v > 70 else ("#27ae60" if v < 30 else "#f39c12")
-    def tc(v):  return "#27ae60" if (v or 0) > 0 else "#e74c3c"
-    def gc(ok): return "#27ae60" if ok else "#e74c3c"
-
-    ema50_ok  = (last["price"] or 0) > (last["ema50"]  or 0)
-    ema200_ok = (last["price"] or 0) > (last["ema200"] or 0)
-    rsi_v     = last["rsi"] or 0
-    rsi_status = "Überkauft" if rsi_v > 70 else ("Überverkauft" if rsi_v < 30 else "Neutral")
-
-    def row(bg, label, value, vc, status, sc):
-        return (f'<tr style="border-bottom:1px solid #eee;background:{bg}">'
-                f'<td style="padding:10px 15px;color:#555;font-size:13px">{label}</td>'
-                f'<td style="padding:10px 15px;font-weight:bold;color:{vc}">{value}</td>'
-                f'<td style="padding:10px 15px;font-size:12px;font-weight:bold;color:{sc}">{status}</td></tr>')
-
-    # Prognose-Zeilen
-    p = prog["current"]
-    pct_main = (prog["target_main"] - p) / p * 100
-    pct_alt  = (prog["target_alt"]  - p) / p * 100
-    trend_col = "#27ae60" if prog["main_bull"] else "#e74c3c"
-    trend_txt = "📈 BULLISCH" if prog["main_bull"] else "📉 BÄRISCH"
-
-    # Fundamentaldaten-Block
-    fund_html = ""
-    if typ == "aktie" and fund:
-        def fp(v): return f"{v:.2f}" if v is not None else "—"
-        def pct(v): return f"{v*100:.1f} %" if v is not None else "—"
-        def mc(v): return (f"${v/1e12:.2f} T" if v >= 1e12 else f"${v/1e9:.2f} B") if v else "—"
-        fund_html = f"""
-  <div style="background:white;border-radius:8px;margin-bottom:16px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-    <div style="background:#2c3e50;color:white;padding:9px 15px;font-size:11px;font-weight:bold;letter-spacing:1px">FUNDAMENTALDATEN</div>
-    <table style="width:100%;border-collapse:collapse">
-      {row("white",   "Marktkapitalisierung", mc(fund.get("marketCap")),     "#333","","") }
-      {row("#fafafa", "KGV (Trailing)",        fp(fund.get("trailingPE")),    "#333","","") }
-      {row("white",   "KGV (Forward)",         fp(fund.get("forwardPE")),     "#333","","") }
-      {row("#fafafa", "EPS",                   fp(fund.get("trailingEps")),   "#333","","") }
-      {row("white",   "Dividendenrendite",     pct(fund.get("dividendYield")),"#333","","") }
-      {row("#fafafa", "Gewinnmarge",           pct(fund.get("profitMargins")),"#333","","") }
-      {row("white",   "ROE",                   pct(fund.get("returnOnEquity")),"#333","","") }
-      {row("#fafafa", "52W-Hoch / Tief",       fp(fund.get("week52High")) + " / " + fp(fund.get("week52Low")), "#333","","") }
-    </table>
-  </div>"""
-
-    # Analyse-Text formatieren
-    analyse_html = ""
-    if analyse_text:
-        for line in analyse_text.split("\n"):
-            if line.startswith("## "):
-                sec = line[3:]
-                is_p = "7." in sec or "Prognose" in sec or "48h" in sec
-                bc = "#e74c3c" if is_p else farbe
-                tc2 = "#c0392b" if is_p else "#2c3e50"
-                analyse_html += (f'<h3 style="color:{tc2};border-bottom:3px solid {bc};'
-                                 f'padding:8px 0 5px 0;margin-top:24px;font-size:15px">{hl.escape(sec)}</h3>')
-            elif any(line.startswith(f"- {k}") for k in ["HAUPTSZENARIO", "ALTERNATIVSZENARIO"]):
-                analyse_html += f'<p style="margin:7px 0;line-height:1.8;font-weight:bold;color:#e74c3c">{hl.escape(line)}</p>'
-            elif any(line.startswith(f"- {k}") for k in ["ENTSCHEIDENDE", "INVALIDIERUNG", "HANDLUNG"]):
-                analyse_html += f'<p style="margin:7px 0;line-height:1.8;font-weight:bold;color:#f39c12">{hl.escape(line)}</p>'
-            elif line.startswith("**") and line.endswith("**"):
-                analyse_html += f'<p style="margin:4px 0;line-height:1.7;color:#222"><strong>{hl.escape(line.strip("*"))}</strong></p>'
-            elif line.strip():
-                analyse_html += f'<p style="margin:4px 0;line-height:1.7;color:#333">{hl.escape(line)}</p>'
-
-    kat_label = {"aktie": "AKTIEN ANALYSE", "krypto": "KRYPTO ANALYSE", "metall": "EDELMETALL ANALYSE"}.get(typ, "ANALYSE")
-
-    html = f"""
-<div style="font-family:Arial,sans-serif;background:#f0f2f6;padding:16px;border-radius:10px;margin-bottom:8px;color:#222">
-
-  <!-- Header -->
-  <div style="background:linear-gradient(135deg,#1a1a2e,#16213e);color:white;padding:18px 20px;border-radius:8px;margin-bottom:14px;border-left:5px solid {farbe}">
-    <div style="font-size:10px;letter-spacing:2px;opacity:0.55;text-transform:uppercase">{kat_label} · DAILY · {last['date']}</div>
-    <div style="font-size:22px;font-weight:bold;margin-top:4px;color:{farbe}">{hl.escape(name)}</div>
-    <div style="font-size:12px;opacity:0.65;margin-top:3px">Elliott Wave · RSI · MACD · EMA 50/200 · 48h-Prognose</div>
-  </div>
-
-  <!-- Prognose-Banner -->
-  <div style="background:{trend_col};color:white;padding:12px 16px;border-radius:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
-    <span style="font-size:16px;font-weight:bold">{trend_txt} &nbsp; {prog['bull_pct']}% Bull / {prog['bear_pct']}% Bear</span>
-    <span style="font-size:13px;opacity:0.9">{prog['empfehlung']}</span>
-  </div>
-
-  <!-- Kursziele -->
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
-    <div style="background:white;border-radius:8px;padding:12px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
-      <div style="font-size:10px;color:#888;margin-bottom:4px">HAUPTSZENARIO ({prog['bull_pct']}%)</div>
-      <div style="font-size:16px;font-weight:bold;color:{trend_col}">{prog['target_main']:,.4f}</div>
-      <div style="font-size:12px;color:{trend_col}">{pct_main:+.2f}%</div>
-    </div>
-    <div style="background:white;border-radius:8px;padding:12px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
-      <div style="font-size:10px;color:#888;margin-bottom:4px">ALTERNATIVSZENARIO ({prog['bear_pct']}%)</div>
-      <div style="font-size:16px;font-weight:bold;color:#555">{prog['target_alt']:,.4f}</div>
-      <div style="font-size:12px;color:#777">{pct_alt:+.2f}%</div>
-    </div>
-    <div style="background:white;border-radius:8px;padding:12px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
-      <div style="font-size:10px;color:#888;margin-bottom:4px">INVALIDIERUNG</div>
-      <div style="font-size:16px;font-weight:bold;color:#e74c3c">{prog['inval']:,.4f}</div>
-      <div style="font-size:12px;color:#aaa">{einheit}</div>
-    </div>
-  </div>
-
-  <!-- Indikatoren -->
-  <div style="background:white;border-radius:8px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)">
-    <div style="background:#2c3e50;color:white;padding:9px 15px;font-size:11px;font-weight:bold;letter-spacing:1px">TECHNISCHE INDIKATOREN</div>
-    <table style="width:100%;border-collapse:collapse">
-      {row("white",   "Kurs", f'<span style="font-size:17px">{px(last["price"])} {einheit}</span>', farbe, "", "")}
-      {row("#fafafa", "EMA 50",     px(last["ema50"]),  "#2980b9", "Preis ÜBER EMA50"   if ema50_ok  else "Preis UNTER EMA50",   gc(ema50_ok))}
-      {row("white",   "EMA 200",    px(last["ema200"]), "#c0392b", "Preis ÜBER EMA200"  if ema200_ok else "Preis UNTER EMA200",  gc(ema200_ok))}
-      {row("#fafafa", "RSI (14)",   str(rsi_v),         rc(rsi_v), rsi_status, rc(rsi_v))}
-      {row("white",   "MACD",       str(last["macd"]),  tc(last["macd"]), "Bullish" if (last["macd"] or 0)>0 else "Bearish", tc(last["macd"]))}
-      {row("#fafafa", "Histogramm", str(last["hist"]),  tc(last["hist"]), "Momentum steigt" if (last["hist"] or 0)>0 else "Momentum fällt", tc(last["hist"]))}
-    </table>
-  </div>
-
-  {fund_html}
-
-  <!-- KI-Analyse -->
-  {"" if not analyse_text else f'''
-  <div style="background:white;border-radius:8px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.06);color:#333">
-    <div style="font-size:10px;color:#888;letter-spacing:1px;margin-bottom:12px">KI-ANALYSE</div>
-    ''' + analyse_html + '''
-  </div>'''}
-
-  <div style="text-align:center;margin-top:12px;font-size:11px;color:#aaa">Keine Anlageberatung · Daten: Yahoo Finance / Kraken</div>
-</div>"""
-
-    return html
-
-def render_email_card(name, typ, einheit, last, prog, fund, analyse_text):
     farbe = ASSET_FARBEN.get(typ, "#888")
     trend_col = "#27ae60" if prog["main_bull"] else "#e74c3c"
     trend_txt = "📈 BULLISCH" if prog["main_bull"] else "📉 BÄRISCH"
@@ -666,8 +532,8 @@ if st.button("🚀 Analyse starten", type="primary", width="stretch"):
         height = 2400 if analyse_text else 800
         components.html(full_html, height=height, scrolling=False)
 
-        # HTML für E-Mail sammeln
-        mail_html += render_email_card(name, typ, einheit, last, prog, fund, analyse_text)
+        # HTML für E-Mail sammeln (gleiches Format wie App-Karte)
+        mail_html += render_card(name, typ, einheit, last, prog, fund, analyse_text)
 
         bar.progress((idx+1)/n, text=f"{name} ✓")
         if idx < n-1:
