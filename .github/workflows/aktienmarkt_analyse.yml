@@ -1,9 +1,7 @@
 name: Aktienmarkt Tagesanalyse
 
 on:
-  schedule:
-    - cron: '30 6 * * 1-5'   # 06:30 UTC = 08:30 Uhr Deutschland (nur Wochentage)
-  workflow_dispatch:           # manueller Start jederzeit moeglich
+  workflow_dispatch:           # nur manueller Start
 
 jobs:
   analyse:
