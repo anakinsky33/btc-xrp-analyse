@@ -5,6 +5,8 @@ import pandas as pd
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+APP_VERSION = "1.4.0"
+
 st.set_page_config(page_title="Markt Analyse", page_icon="📊", layout="wide")
 
 def get_secret(key):
@@ -116,7 +118,7 @@ with st.sidebar:
 
 # ── Hauptbereich Header ────────────────────────────────────────────────────────
 st.title("📊 Markt Analyse")
-st.caption("Aktien · Krypto · Edelmetalle  |  Elliott Wave · RSI · MACD · EMA · KI-Analyse · 48h-Prognose")
+st.caption(f"Aktien · Krypto · Edelmetalle  |  Elliott Wave · RSI · MACD · EMA · KI-Analyse · 48h-Prognose  |  v{APP_VERSION}")
 
 if not ausgewaehlt:
     st.warning("Bitte mindestens ein Asset auswählen.")
