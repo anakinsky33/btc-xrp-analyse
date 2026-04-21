@@ -1,9 +1,7 @@
 name: Gold & Silber Tagesanalyse
 
 on:
-  schedule:
-    - cron: '15 6 * * *'   # 06:15 UTC = 08:15 Uhr Deutschland
-  workflow_dispatch:         # manueller Start jederzeit moeglich
+  workflow_dispatch:           # nur manueller Start
 
 jobs:
   analyse:

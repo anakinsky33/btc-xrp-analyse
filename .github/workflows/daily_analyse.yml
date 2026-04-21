@@ -1,9 +1,7 @@
 name: BTC & XRP Tagesanalyse
 
 on:
-  schedule:
-    - cron: '0 6 * * *'
-  workflow_dispatch:
+  workflow_dispatch:           # nur manueller Start
 
 jobs:
   analyse:
